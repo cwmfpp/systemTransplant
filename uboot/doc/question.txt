@@ -1,0 +1,9 @@
+编译自己的uboot
+(1)在顶层Makefile下拷贝一下已有标签smdk2410_config为cwm_config
+smdk2410_config :   unconfig
+     @$(MKCONFIG) $(@:_config=) arm arm920t smdk2410 samsung s3c24x0
+cwm_config :    unconfig
+     @$(MKCONFIG) $(@:_config=) arm arm920t cwm samsung s3c24x0
+(2)拷贝/include/configs下的smdk2410.h为cwm.h
+(3)拷贝/board/samsung下的smdk2410文件夹为cwm文件夹
+现在执行命令make cwm就可以编译u-boot了

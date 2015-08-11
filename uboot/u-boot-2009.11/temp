@@ -1,0 +1,8 @@
+./include/asm-arm/mach-types.h:#define MACH_TYPE_SMDK2400             145
+./include/asm-arm/mach-types.h:#  define machine_arch_type	MACH_TYPE_SMDK2400
+./include/asm-arm/mach-types.h:# define machine_is_smdk2400()	(machine_arch_type == MACH_TYPE_SMDK2400)
+./board/samsung/smdk2400/smdk2400.c:	/* arch number of SAMSUNG-Board to MACH_TYPE_SMDK2400 */
+./board/samsung/smdk2400/smdk2400.c:	gd->bd->bi_arch_number = MACH_TYPE_SMDK2400;
+./board/samsung/cwm/smdk2400.c:	/* arch number of SAMSUNG-Board to MACH_TYPE_SMDK2400 */
+./board/samsung/cwm/smdk2400.c:	gd->bd->bi_arch_number = MACH_TYPE_SMDK2400;
+匹配到二进制文件 ./board/samsung/cwm/.smdk2400.c.swp
