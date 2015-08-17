@@ -7,3 +7,26 @@ cwm_config :    unconfig
 (2)拷贝/include/configs下的smdk2410.h为cwm.h
 (3)拷贝/board/samsung下的smdk2410文件夹为cwm文件夹
 现在执行命令make cwm就可以编译u-boot了
+
+uboot下Makefile分析
+以 make smdk2410为例
+第一条匹配语句为
+%: %_config
+	$(MAKE)
+说明：smdk2410匹配%且依赖于%_config,即smdk2410_config
+第二条匹配语句
+ smdk2410_config :   unconfig
+     @$(MKCONFIG) $(@:_config=) arm arm920t smdk2410 samsung s3c24x0
+说明：依赖于unconfig
+第三条匹配语句
+unconfig:
+      @rm -f $(obj)include/config.h $(obj)include/config.mk \
+          $(obj)board/*/config.tmp $(obj)board/*/*/config.tmp \
+          $(obj)include/autoconf.mk $(obj)include/autoconf.mk.dep
+说明：执行完第三条语句，返回到第二条语句中执行@$(MKCONFIG) $(@:_config=) arm arm920t smdk2410 samsung s3c24x0;
+MKCONFIG    := $(SRCTREE)/mkconfig
+mkconfig为一个脚本文件，$(@:_config=) arm arm920t smdk2410 samsung s3c24x0为他的输入参数,脚本文件执行完会在include/下生成config.mk文件，在include/下生成config.h文件.
+接着执行$(MAKE)
+
+
+
