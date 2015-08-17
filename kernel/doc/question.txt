@@ -1,0 +1,132 @@
+(1)
+cwm@sw-cwm:~/work/linux-3.19.8$ make menuconfig
+  HOSTCC  scripts/kconfig/mconf.o
+  In file included from scripts/kconfig/mconf.c:23:0:
+  scripts/kconfig/lxdialog/dialog.h:38:20: fatal error: curses.h: 没有那个文件或目录
+   #include CURSES_LOC
+                      ^
+					  compilation terminated.
+					  make[1]: *** [scripts/kconfig/mconf.o] 错误 1
+					  make: *** [menuconfig] 错误 2
+result:	rhel系列安装ncurses-devel包
+		ubuntu安装libncurses5-dev包
+(2)
+cwm@sw-cwm:~/work/linux-3.19.8$ make menuconfig
+make: *** arch/arm: 是一个目录。 停止。
+result: 原来是因为 ARCH ？= arm后面多了一个空格的缘故
+(3)
+机器ID号，在/arch/arm/tools下的mach-types文件中有罗列
+针对ID号为SMDK2410的开发板：打开arch/arm/mach-s3c24xx下的mach-smdk2410.c会看到使用
+smdk2410        ARCH_SMDK2410       SMDK2410        193
+
+ MACHINE_START(SMDK2410, "SMDK2410")
+ .atag_offset    = 0x100,
+ .map_io     = smdk2410_map_io,
+ .init_irq   = s3c2410_init_irq,
+ .init_machine   = smdk2410_init,
+ .init_time  = smdk2410_init_time,
+ MACHINE_END
+ 内核在开始编译的时候会在include/generated下产生mach-types.h文件,里面有
+  #define MACH_TYPE_SMDK2410             193
+ 与uboot传递的ID号码一致
+(4)
+mtd分区
+mini2440的分区划分在arch/arm/mach-s3c24xx下的mach-mini2440.c文件中
+/* NAND Flash on MINI2440 board */
+static struct mtd_partition mini2440_default_nand_part[] __initdata = {
+[0] = {
+.name   = "u-boot",
+.size   = SZ_256K,
+.offset = 0,
+},
+[1] = {
+.name   = "u-boot-env",
+.size   = SZ_128K,
+.offset = SZ_256K,
+},
+[2] = {
+.name   = "kernel",
+/* 5 megabytes, for a kernel with no modules
+* or a uImage with a ramdisk attached */
+.size   = 0x00500000,
+.offset = SZ_256K + SZ_128K,
+},
+[3] = {
+.name   = "root",
+.offset = SZ_256K + SZ_128K + 0x00500000,
+.size   = MTDPART_SIZ_FULL,
+},
+};
+smdk2410的分区划分在arch/arm/mach-s3c24xx下的common-smdk.c文件中,需要自己修改
+(5)
+uboot load address、entry point、 bootm address以及kernel运行地址的意义及联系
+按各地址起作用的顺序，uboot引导linux内核启动涉及到以下地址：
+1.      load address：
+2.     entry point： 这两个地址是mkimage时指定的
+3.     bootm address：bootm为uboot的一个命令，以此从address启动kernel
+4.     kernel运行地址：在具体mach目录中的Makefile.boot中指定，为kernel启动后实际运行的物理地址
+
+mkimage -n 'linux-3.2.1' -A arm -O linux -T kernel -C none -a 0x30008000 -e 0x30008000 -d zImage uImage
+
+理论上因为mkimage要为zImage加上0x40字节的header，所以entry point = load address + 0x40
+
+但由于uboot 的bootm对uImage处理不是简单的go操作，其对前三个地址都有比较判断，所以在实际的操作中，就分为两种不同的情况：
+
+1. bootm地址和load address一样
+
+　　此种情况下,bootm不会对uImage header后的zImage进行memory move的动作，而会直接go到entry point开始执行。因此此时的entry point必须设置为load address + 0x40。如果kernel boot过程没有到uncompressing the kernel，就可能是这里设置不对。
+
+boom address == load address == entry point - 0x40
+
+具体细节可参看uboot代码common/cmd_bootm.c中bootm_load_os函数的实现：
+
+        switch (comp) {
+        case IH_COMP_NONE:
+                if (load == blob_start || load == image_start) {
+                        printf("   XIP %s ... ", type_name);
+                        no_overlap = 1;
+                } else {
+                        printf("   Loading %s ... ", type_name);
+                        memmove_wd((void *)load, (void *)image_start,
+                                        image_len, CHUNKSZ);
+                }
+                *load_end = load + image_len;
+                puts("OK\n");
+                break;
+
+2. bootm地址和load address不一样(但需要避免出现memory move时出现覆盖导致zImage被破坏的情况）
+
+　　此种情况下，bootm会把uImage header后的zImage move到load address（见上方代码），然后go到entry point开始执行。 由此知道此时的load address必须等于entry point。
+
+boom address != load address == entry point
+
+因此，在mkimage以及设置uboot boot command的时候需要注意到以上两种情况。
+
+ 
+
+至于kernel的运行地址，其与前3个地址没有关系，除了要避免内存覆盖导致解压后kernel不完整的情况。
+
+zImage的头部有地址无关的自解压程序，因此刚开始执行的时候，zImage所在的内存地址（entry point）不需要同编译kernel的地址相同。自解压程序会把kernel解压到编译时指定的物理地址，然后开始地址相关代码的执行。在开启MMU之前，kernel都是直接使用物理地址（可参看System.map）。
+
+(6)
+arch/arm/mach-s3c24xx下的Makefile.boot定义了内核的加载地址，Makefile中引用了内核的加载地址;scripts/下的文件Makefile.lib中的UIMAGE_ENTRYADDR是内核的入口地址;scripts/下的mkuboot.sh使用mkimage对内核做了一次封装;
+由于在Makefile.lib中UIMAGE_ENTRYADDR ?= $(UIMAGE_LOADADDR),UIMAGE_ENTRYADDR的值没有加0x14字节的大小，我们应更改他的值
+UIMAGE_ENTRYADDR ?= $(shell echo $(UIMAGE_LOADADDR) | sed -e "s/..$$/40/")
+?=最好该成为=
+
+mkimage -A arm -O linux -C none -T kernel -a 0x50008000 -e 0x50008040 -n Linux-3.19.8 -d zImage uImage
+如果没有-n Linux-3.19.8会出现段错误
+(7)
+vmlinux: $(vmlinux-lds) $(vmlinux-init) $(vmlinux-main) vmlinux.o $(kallsyms.o) FORCE
+实际上它是一个伪目标：
+PHONY +=FORCE
+FORCE:
+
+# Declare the contents of the .PHONY variable as phony.  We keep that
+# information in a variable so we can use it in if_changed and friends.
+.PHONY: $(PHONY)
+
+从上面看到，FORCE 既没有依赖的规则，其底下也没有可执行的命令。
+
+如果一个规则没有命令或者依赖，而且它的目标不是一个存在的文件名，在执行此规则时，目标总会被认为是最新的。也就是说，这个规则一旦被执行，make 就认为它所表示的目标已经被更新过。当将这样的目标(FORCE)作为一个规则的依赖时(如上的 vmlinux: )，由于依赖总被认为是被更新过的，所以作为依赖所在的规则定义的命令总会被执行。
+比如上面的 vmlinux: 在每次 make 时，它下面的这些命令总会被执行：
