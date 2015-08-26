@@ -1,0 +1,76 @@
+linux rootfs制作
+
+在pc上建造rootfs目录用于存放根目录下的命令
+$ mkdir /home/work/systemTransplant/rootfs
+
+下载地址：http://www.busybox.net/downloads/
+
+https://github.com/mirror/busybox.git
+git clone https://github.com/mirror/busybox.git
+
+编译busybox:
+查看busybox的版本号,命令等信息
+busybox --help
+    $ cd busybox
+    $ vi Makefile
+      修改第190行将 ARCH ?= $(SUBARCH) 改为ARCH := arm
+      修改 164行 将CROSS_COMPILE ?=  改为 CROSS_COMPILE := arm-linux-
+    $ make menuconfig
+      修改如下：
+      Busybox Settings  --->
+        Build Options  --->
+          [ ] Build BusyBox as a static binary (no shared libs) //去掉还是选择？
+      Installation Options ("make install" behavior)  --->
+        (../rootfs) BusyBox installation prefix
+    $ make
+    $ make install
+    完成后会在../rootfs下生成一些目录(bin、sbin等)，里面包含了生成的所有文件和目录结构。
+../rootfs = /home/cwm/work/systemTransplant/fileSystem
+
+  加入busybox所依赖的动态库文件到rootfs：
+    $ cd /home/cwm/work/systemTransplant/fileSystem/busybox/rootfs
+    $ mkdir -p lib usr/lib
+    $ cp -a /usr/local/arm/4.3.2/arm-none-linux-gnueabi/libc/armv4t/lib/l*.so* /home/cwm/work/systemTransplant/fileSystem/rootfs/lib/
+    $ cp -a /usr/local/arm/4.3.2/arm-none-linux-gnueabi/libc/armv4t/usr/lib/l*.so* /home/cwm/work/systemTransplant/fileSystem/rootfs/usr/lib/
+    去掉库文件中无法的代码:
+    $ cd /home/cwm/work/systemTransplant/fileSystem/busybox/lib/
+    $ arm-linux-strip -g -s ./lib/* ./usr/lib/*
+    
+  制作其它需要的文件夹
+    $ cd /home/cwm/work/systemTransplant/fileSystem/rootfs
+    $ mkdir -p dev proc sys tmp var root home/cwm mnt
+
+etc文件夹配置
+cd /home/cwm/work/systemTransplant/fileSystem/rootfs
+cd etc
+mkdir init.d
+touch inittab
+
+vim inittab //内容参考busybox下的init/init.c文件中的内容
+::sysinit:/etc/init.d/rcS
+::askfirst:/bin/sh
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/swapoff -a
+::shutdown:/bin/umount -a -r
+::restart:/sbin/init
+
+cd init.d
+touch rcS
+chmod +x rcS
+vim rcS //内容参考busybox下的docs/mdev.txt文件中的内容
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+echo /sbin/mdev > /proc/sys/kernel/hotplug
+mdev -s
+
+cd ../..
+
+cd dev
+mknod console c 5 1
+mknod null c 1 3
+以上所有命令已经在Makefile中实现，把Makefile拷贝到rootfs下，执行make,就可以生成相应的内容
+cd ..
+
+mkyaffs2image rootfs rootfs.yaffs2.img
+
+linux内核启动第一个进程init的启动是linux内核通过找到已经挂载上的根文件系统下的init命令且调用，根文件系统的init被调用后，init进程就开始执行，由于init进程是busybox生成的，所以init的执行代码是在busybox下init/init.c，解析/etc/inittab的参数
