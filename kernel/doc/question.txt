@@ -1,4 +1,6 @@
 (1)
+拷贝默认配置文件
+cp arch/arm/configs/mini2440_defconfig .config
 cwm@sw-cwm:~/work/linux-3.19.8$ make menuconfig
   HOSTCC  scripts/kconfig/mconf.o
   In file included from scripts/kconfig/mconf.c:23:0:
